@@ -20,11 +20,60 @@ TBS_URL = "http://tieba.baidu.com/dc/common/tbs"
 SIGN_URL = "http://c.tieba.baidu.com/c/c/forum/sign"
 
 # EMAIL
-HOST = os.environ['HOST']
-FROM = os.environ['FROM']
-TO = os.environ['TO'].split('#')
-AUTH = os.environ['AUTH']
-PORT = int(os.environ.get('PORT', 465))  # 默认 SSL 端口
+HOST = os.environ.get('HOST')
+FROM = os.environ.get('FROM')
+TO = os.environ.get('TO', '').split('#')
+AUTH = os.environ.get('AUTH')
+PORT = int(os.environ.get('PORT', 465))  # 新增 PORT，默认 465
+
+def send_email(sign_list):
+    if not all([HOST, FROM, TO, AUTH]):
+        logger.info("未配置邮箱，跳过邮件发送")
+        return
+
+    length = len(sign_list)
+    subject = f"{time.strftime('%Y-%m-%d', time.localtime())} 签到{length}个贴吧"
+    body = """
+    <style>
+    .child {
+      background-color: rgba(173, 216, 230, 0.19);
+      padding: 10px;
+    }
+    .child * {
+      margin: 5px;
+    }
+    </style>
+    """
+    for i in sign_list:
+        body += f"""
+        <div class="child">
+            <div class="name"> 贴吧名称: { i['name'] }</div>
+            <div class="slogan"> 贴吧简介: { i['slogan'] }</div>
+        </div>
+        <hr>
+        """
+
+    msg = MIMEText(body, 'html', 'utf-8')
+    msg['subject'] = subject
+    msg['from'] = FROM
+    msg['to'] = ', '.join(TO)
+
+    # ✅ 使用 SSL 连接 + 错误处理
+    try:
+        logger.info(f"正在连接 SMTP: {HOST}:{PORT}")
+        smtp = smtplib.SMTP_SSL(HOST, PORT, timeout=10)
+        smtp.login(FROM, AUTH)
+        smtp.sendmail(FROM, TO, msg.as_string())
+        smtp.quit()
+        logger.info("邮件发送成功")
+    except smtplib.SMTPAuthenticationError:
+        logger.error("邮箱认证失败，检查 AUTH（授权码）是否正确")
+    except smtplib.SMTPConnectError as e:
+        logger.error(f"SMTP 连接失败: {e}")
+    except socket.gaierror:
+        logger.error(f"无法解析 HOST: {HOST}，请检查 HOST 值")
+    except Exception as e:
+        logger.error(f"邮件发送异常: {e}")
 
 HEADERS = {
     'Host': 'tieba.baidu.com',
@@ -265,6 +314,10 @@ def main():
         logger.info("完成第" + str(n) + "个用户签到")
     send_email(favorites)
     logger.info("所有用户签到结束")
+    try:
+        send_email(favorites)
+    except Exception as e:
+        logger.warning(f"邮件发送失败但不影响签到: {e}")
 
 
 if __name__ == '__main__':
