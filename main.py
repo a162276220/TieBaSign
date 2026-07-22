@@ -24,6 +24,7 @@ HOST = os.environ['HOST']
 FROM = os.environ['FROM']
 TO = os.environ['TO'].split('#')
 AUTH = os.environ['AUTH']
+PORT = int(os.environ.get('PORT', 465))  # 默认 SSL 端口
 
 HEADERS = {
     'Host': 'tieba.baidu.com',
@@ -176,6 +177,44 @@ def client_sign(bduss, tbs, fid, kw):
     data = encodeData(data)
     res = s.post(url=SIGN_URL, data=data, timeout=5).json()
     return res
+# 修改 send_email 函数（第 180 行）
+def send_email(sign_list):
+    if HOST is None or FROM is None or TO is None or AUTH is None:
+        logger.info("未配置邮箱")
+        return
+    length = len(sign_list)
+    subject = f"{time.strftime('%Y-%m-%d', time.localtime())} 签到{length}个贴吧"
+    body = """
+    <style>
+    .child {
+      background-color: rgba(173, 216, 230, 0.19);
+      padding: 10px;
+    }
+    .child * {
+      margin: 5px;
+    }
+    </style>
+    """
+    for i in sign_list:
+        body += f"""
+        <div class="child">
+            <div class="name"> 贴吧名称: { i['name'] }</div>
+            <div class="slogan"> 贴吧简介: { i['slogan'] }</div>
+        </div>
+        <hr>
+        """
+    msg = MIMEText(body, 'html', 'utf-8')
+    msg['subject'] = subject
+
+    # ✅ 修复：使用 SSL 连接
+    try:
+        smtp = smtplib.SMTP_SSL(HOST, PORT)
+        smtp.login(FROM, AUTH)
+        smtp.sendmail(FROM, TO, msg.as_string())
+        smtp.quit()
+        logger.info("邮件发送成功")
+    except Exception as e:
+        logger.error(f"邮件发送失败: {e}")
 
 def send_email(sign_list):
     if HOST is None or FROM is None or TO is None or AUTH is None:
